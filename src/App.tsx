@@ -37,10 +37,14 @@ type ExportProgress = {
 type ExportResult = {
   outputPath: string
   folderPath: string
+  frameCount?: number
+  imagePath?: string
+  videoPath?: string
+  contentIdentifier?: string
 }
 
 type Language = 'zh-CN' | 'en'
-type ExportFormat = 'mp4' | 'webp' | 'gif'
+type ExportFormat = 'mp4' | 'webp' | 'gif' | 'livePhoto'
 type ShortcutAction =
   | 'playPause'
   | 'previousFrame'
@@ -81,11 +85,11 @@ type FramePoint = {
 
 const videoFilters = [
   { name: 'Video', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'] },
+  { name: 'Live Photo', extensions: ['jpg', 'jpeg', 'heic', 'heif', 'png', 'mov', 'mp4'] },
 ]
 
 const DEFAULT_FOCUS_SECONDS = 12
 const MIN_FOCUS_SECONDS = 1
-const SEEK_STEP_SECONDS = 5
 const PREVIEW_WHEEL_STEP_THRESHOLD = 80
 const DETAIL_THUMBNAIL_DEBOUNCE_MS = 250
 const runningInTauri = isTauri()
@@ -107,6 +111,7 @@ const menuActions = {
   exportFormatMp4: 'quickgif-export-format-mp4',
   exportFormatWebp: 'quickgif-export-format-webp',
   exportFormatGif: 'quickgif-export-format-gif',
+  exportFormatLivePhoto: 'quickgif-export-format-live-photo',
   keyboardShortcuts: 'quickgif-keyboard-shortcuts',
 } as const
 
@@ -114,6 +119,14 @@ const exportFormatMenuMap: Record<string, ExportFormat> = {
   [menuActions.exportFormatMp4]: 'mp4',
   [menuActions.exportFormatWebp]: 'webp',
   [menuActions.exportFormatGif]: 'gif',
+  [menuActions.exportFormatLivePhoto]: 'livePhoto',
+}
+
+const exportFormatLabel: Record<ExportFormat, string> = {
+  mp4: 'MP4',
+  webp: 'WebP',
+  gif: 'GIF',
+  livePhoto: 'Live Photo',
 }
 
 const translations = {
@@ -138,11 +151,23 @@ const translations = {
     exportDone: '导出完成',
     exportCurrentFrame: '导出当前帧图片',
     imageExportDone: '图片导出完成',
+    exportFrameSequence: '逐帧导出选区',
+    frameSequenceExporting: '正在逐帧导出图片',
+    frameSequenceDone: '逐帧图片导出完成',
+    exportedFrames: '导出帧数',
     preview: '预览',
     unloadedVideo: '未载入视频',
     exportMp4: '导出 MP4',
     exportWebp: '导出 WebP',
     exportGif: '导出 GIF',
+    exportLivePhoto: '导出实况照片',
+    livePhotoPairHint: '已导出配对 JPG + MOV，可一并导入「照片」App',
+    livePhotoDurationHint: '实况照片选区需在 0.5–6 秒',
+    livePhotoPreparing: '准备导出实况照片',
+    livePhotoEncodingVideo: '生成实况视频',
+    livePhotoExtractingStill: '提取关键静帧',
+    livePhotoWritingMetadata: '写入配对元数据',
+    livePhotoDone: '实况照片导出完成',
     chooseVideo: '选择视频',
     loadingVideoInfo: '正在读取视频信息',
     chooseOrDropVideo: '选择或拖入视频',
@@ -172,8 +197,8 @@ const translations = {
     clipLength: '片段',
     currentFormat: '格式',
     playPause: 'Space 播放 / 暂停',
-    previousFrame: '后退 5 秒',
-    nextFrame: '前进 5 秒',
+    previousFrame: '上一帧',
+    nextFrame: '下一帧',
     hideControls: '隐藏播放控件',
     showControls: '显示播放控件',
     settingExportFolder: '设置默认导出文件夹',
@@ -186,8 +211,8 @@ const translations = {
     recordingShortcut: '按下新快捷键',
     shortcutSaved: '快捷键已保存',
     playPauseAction: '播放 / 暂停',
-    previousFrameAction: '后退 5 秒',
-    nextFrameAction: '前进 5 秒',
+    previousFrameAction: '上一帧',
+    nextFrameAction: '下一帧',
     setStartFrameAction: '设为开始帧',
     setEndFrameAction: '设为结束帧',
     exportClipAction: '导出当前片段',
@@ -213,11 +238,23 @@ const translations = {
     exportDone: 'Export complete',
     exportCurrentFrame: 'Exporting current frame image',
     imageExportDone: 'Image export complete',
+    exportFrameSequence: 'Export Range as Frames',
+    frameSequenceExporting: 'Exporting frame images',
+    frameSequenceDone: 'Frame image export complete',
+    exportedFrames: 'Frames exported',
     preview: 'Preview',
     unloadedVideo: 'No video loaded',
     exportMp4: 'Export MP4',
     exportWebp: 'Export WebP',
     exportGif: 'Export GIF',
+    exportLivePhoto: 'Export Live Photo',
+    livePhotoPairHint: 'Exported paired JPG + MOV — import both into Photos',
+    livePhotoDurationHint: 'Live Photo range must be 0.5–6 seconds',
+    livePhotoPreparing: 'Preparing Live Photo export',
+    livePhotoEncodingVideo: 'Encoding Live Photo video',
+    livePhotoExtractingStill: 'Extracting key still',
+    livePhotoWritingMetadata: 'Writing pairing metadata',
+    livePhotoDone: 'Live Photo export complete',
     chooseVideo: 'Choose Video',
     loadingVideoInfo: 'Reading video info',
     chooseOrDropVideo: 'Choose or drop a video',
@@ -247,8 +284,8 @@ const translations = {
     clipLength: 'Clip',
     currentFormat: 'Format',
     playPause: 'Space Play / Pause',
-    previousFrame: 'Back 5 Seconds',
-    nextFrame: 'Forward 5 Seconds',
+    previousFrame: 'Previous Frame',
+    nextFrame: 'Next Frame',
     hideControls: 'Hide playback controls',
     showControls: 'Show playback controls',
     settingExportFolder: 'Setting default export folder',
@@ -261,8 +298,8 @@ const translations = {
     recordingShortcut: 'Press new shortcut',
     shortcutSaved: 'Shortcut saved',
     playPauseAction: 'Play / Pause',
-    previousFrameAction: 'Back 5 Seconds',
-    nextFrameAction: 'Forward 5 Seconds',
+    previousFrameAction: 'Previous Frame',
+    nextFrameAction: 'Next Frame',
     setStartFrameAction: 'Set Start Frame',
     setEndFrameAction: 'Set End Frame',
     exportClipAction: 'Export Current Clip',
@@ -278,18 +315,26 @@ const progressStageTranslations: Record<string, keyof typeof translations['zh-CN
   提交导出任务: 'submitExport',
   导出当前帧图片: 'exportCurrentFrame',
   图片导出完成: 'imageExportDone',
+  frameSequenceExporting: 'frameSequenceExporting',
+  frameSequenceDone: 'frameSequenceDone',
   mp4Preparing: 'mp4Preparing',
   mp4Encoding: 'mp4Encoding',
   mp4Done: 'mp4Done',
   webpPreparing: 'webpPreparing',
   webpEncoding: 'webpEncoding',
   webpDone: 'webpDone',
+  livePhotoPreparing: 'livePhotoPreparing',
+  livePhotoEncodingVideo: 'livePhotoEncodingVideo',
+  livePhotoExtractingStill: 'livePhotoExtractingStill',
+  livePhotoWritingMetadata: 'livePhotoWritingMetadata',
+  livePhotoDone: 'livePhotoDone',
 }
 
 const exportButtonKey: Record<ExportFormat, keyof typeof translations['zh-CN']> = {
   mp4: 'exportMp4',
   webp: 'exportWebp',
   gif: 'exportGif',
+  livePhoto: 'exportLivePhoto',
 }
 
 const shortcutActionLabelKey: Record<ShortcutAction, keyof typeof translations['zh-CN']> = {
@@ -568,9 +613,15 @@ function App() {
         return
       }
 
-      seekToTime(video.currentTime + direction * SEEK_STEP_SECONDS, false)
+      if (frames.length === 0) {
+        seekToTime(video.currentTime + direction * frameDuration, false)
+        return
+      }
+
+      const targetIndex = adjacentFrameIndex(frames, video.currentTime, direction)
+      seekToTime(frames[targetIndex].timestamp, false)
     },
-    [seekToTime, videoInfo],
+    [frameDuration, frames, seekToTime, videoInfo],
   )
 
   const handlePreviewWheel = useCallback(
@@ -599,15 +650,17 @@ function App() {
         return
       }
 
+      const markerTime = frames.length > 0 ? frames[nearestFrameIndex(frames, currentTime)].timestamp : currentTime
+
       if (marker === 'start') {
-        const nextStart = clamp(currentTime, 0, Math.max(0, endTime - frameDuration))
+        const nextStart = clamp(markerTime, 0, Math.max(0, endTime - frameDuration))
         setStartTime(nextStart)
       } else {
-        const nextEnd = clamp(currentTime, Math.min(videoInfo.duration, startTime + frameDuration), videoInfo.duration)
+        const nextEnd = clamp(markerTime, Math.min(videoInfo.duration, startTime + frameDuration), videoInfo.duration)
         setEndTime(nextEnd)
       }
     },
-    [currentTime, endTime, frameDuration, startTime, videoInfo],
+    [currentTime, endTime, frameDuration, frames, startTime, videoInfo],
   )
 
   const saveShortcuts = useCallback(
@@ -817,6 +870,14 @@ function App() {
       return
     }
 
+    if (exportFormat === 'livePhoto') {
+      const duration = endTime - startTime
+      if (duration < 0.5 || duration > 6) {
+        setError(t('livePhotoDurationHint'))
+        return
+      }
+    }
+
     setError('')
     setExportResult(null)
     setExportProgress({ progress: 1, stage: 'submitExport' })
@@ -827,34 +888,44 @@ function App() {
         startTime,
         endTime,
       }
-      const result = await invoke<ExportResult>(
-        exportFormat === 'gif'
-          ? 'export_gif_command'
-          : exportFormat === 'webp'
-            ? 'export_webp_command'
-            : 'export_mp4_command',
-        {
-          request:
-            exportFormat === 'gif'
-              ? {
-                  ...baseRequest,
-                  width: 'w720',
-                  frameRate: 'fps15',
-                  quality: 'standard',
-                }
-              : baseRequest,
-        },
-      )
+
+      let command = 'export_mp4_command'
+      let request: Record<string, unknown> = baseRequest
+      let doneStage = 'mp4Done'
+
+      if (exportFormat === 'gif') {
+        command = 'export_gif_command'
+        request = {
+          ...baseRequest,
+          width: 'w720',
+          frameRate: 'fps15',
+          quality: 'standard',
+        }
+        doneStage = '导出完成'
+      } else if (exportFormat === 'webp') {
+        command = 'export_webp_command'
+        doneStage = 'webpDone'
+      } else if (exportFormat === 'livePhoto') {
+        command = 'export_live_photo_command'
+        const stillInRange = currentTime >= startTime && currentTime <= endTime
+        request = {
+          ...baseRequest,
+          stillTime: stillInRange ? currentTime : (startTime + endTime) / 2,
+        }
+        doneStage = 'livePhotoDone'
+      }
+
+      const result = await invoke<ExportResult>(command, { request })
       setExportResult(result)
       setExportProgress({
         progress: 100,
-        stage: exportFormat === 'gif' ? '导出完成' : exportFormat === 'webp' ? 'webpDone' : 'mp4Done',
+        stage: doneStage,
       })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
       setExportProgress(null)
     }
-  }, [endTime, exportFormat, startTime, videoInfo])
+  }, [currentTime, endTime, exportFormat, startTime, t, videoInfo])
 
   const runShortcutAction = useCallback(
     (action: ShortcutAction) => {
@@ -896,10 +967,11 @@ function App() {
     setExportProgress({ progress: 1, stage: 'exportCurrentFrame' })
 
     try {
+      const timestamp = frames.length > 0 ? frames[nearestFrameIndex(frames, currentTime)].timestamp : currentTime
       const result = await invoke<ExportResult>('export_frame_image_command', {
         request: {
           inputPath: videoInfo.path,
-          timestamp: currentTime,
+          timestamp,
         },
       })
       setExportResult(result)
@@ -911,7 +983,45 @@ function App() {
       setError(caught instanceof Error ? caught.message : String(caught))
       setExportProgress(null)
     }
-  }, [currentTime, videoInfo])
+  }, [currentTime, frames, videoInfo])
+
+  const exportFrameSequence = useCallback(async () => {
+    if (!videoInfo || startTime >= endTime) {
+      return
+    }
+
+    setContextMenu(null)
+    setError('')
+    setExportResult(null)
+    setExportProgress({ progress: 1, stage: 'frameSequenceExporting' })
+
+    try {
+      let sequenceStart = startTime
+      let sequenceEnd = endTime
+      if (frames.length > 0) {
+        const startIndex = nearestFrameIndex(frames, startTime)
+        const endIndex = nearestFrameIndex(frames, endTime)
+        sequenceStart = frames[startIndex].timestamp
+        sequenceEnd = frames[endIndex + 1]?.timestamp ?? videoInfo.duration
+        if (sequenceEnd <= sequenceStart) {
+          sequenceEnd = Math.min(videoInfo.duration, sequenceStart + frameDuration)
+        }
+      }
+
+      const result = await invoke<ExportResult>('export_frame_sequence_command', {
+        request: {
+          inputPath: videoInfo.path,
+          startTime: sequenceStart,
+          endTime: sequenceEnd,
+        },
+      })
+      setExportResult(result)
+      setExportProgress({ progress: 100, stage: 'frameSequenceDone' })
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+      setExportProgress(null)
+    }
+  }, [endTime, frameDuration, frames, startTime, videoInfo])
 
   const openContextMenu = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -968,7 +1078,7 @@ function App() {
         const nextExportFormat = exportFormatMenuMap[action]
         if (nextExportFormat) {
           setExportFormat(nextExportFormat)
-          setTimelineMessage(`${t('exportFormatSelected')}：${nextExportFormat.toUpperCase()}`)
+          setTimelineMessage(`${t('exportFormatSelected')}：${exportFormatLabel[nextExportFormat]}`)
           return
         }
 
@@ -1021,6 +1131,9 @@ function App() {
         setExportProgress(event.payload)
       }),
       listen<ExportProgress>('gif-export-progress', (event) => {
+        setExportProgress(event.payload)
+      }),
+      listen<ExportProgress>('livephoto-export-progress', (event) => {
         setExportProgress(event.payload)
       }),
     ])
@@ -1270,6 +1383,15 @@ function App() {
                       <Download size={15} />
                       {t('exportPngShort')}
                     </button>
+                    <button
+                      type="button"
+                      className="clip-action-button is-secondary"
+                      onClick={() => void exportFrameSequence()}
+                      disabled={!canExport}
+                    >
+                      <Download size={15} />
+                      {t('exportFrameSequence')}
+                    </button>
                   </div>
                 )}
               </div>
@@ -1344,8 +1466,13 @@ function App() {
                   {t('clipLength')} <strong>{formatTime(clipDuration)}</strong>
                 </span>
                 <span>
-                  {t('currentFormat')} <strong>{exportFormat.toUpperCase()}</strong>
+                  {t('currentFormat')} <strong>{exportFormatLabel[exportFormat]}</strong>
                 </span>
+                {exportFormat === 'livePhoto' && (
+                  <span>
+                    {t('livePhotoDurationHint')}
+                  </span>
+                )}
               </div>
             )}
             {(timelineMessage || detailMessage) && <p className="timeline-note">{statusText(detailMessage || timelineMessage)}</p>}
@@ -1363,7 +1490,18 @@ function App() {
 
           {exportResult && (
             <section className="result-panel">
-              <span>{exportResult.outputPath}</span>
+              <div className="result-paths">
+                <span>{exportResult.outputPath}</span>
+                {typeof exportResult.frameCount === 'number' && (
+                  <span>{t('exportedFrames')}：{exportResult.frameCount}</span>
+                )}
+                {exportResult.videoPath && exportResult.videoPath !== exportResult.outputPath && (
+                  <span>{exportResult.videoPath}</span>
+                )}
+                {exportResult.imagePath && exportResult.videoPath && (
+                  <span className="result-hint">{t('livePhotoPairHint')}</span>
+                )}
+              </div>
               <button type="button" className="secondary-button" onClick={() => void openPath(exportResult.folderPath)}>
                 <FolderOpen size={17} />
                 {t('openFolder')}
@@ -1575,6 +1713,30 @@ function nearestFrameIndex(frames: FramePoint[], timestamp: number) {
   const previousDelta = Math.abs(frames[previous].timestamp - timestamp)
   const currentDelta = Math.abs(frames[low].timestamp - timestamp)
   return previousDelta <= currentDelta ? previous : low
+}
+
+function adjacentFrameIndex(frames: FramePoint[], timestamp: number, direction: -1 | 1) {
+  if (frames.length === 0) {
+    return 0
+  }
+
+  const nearest = nearestFrameIndex(frames, timestamp)
+  const previousGap = nearest > 0 ? frames[nearest].timestamp - frames[nearest - 1].timestamp : Number.POSITIVE_INFINITY
+  const nextGap = nearest + 1 < frames.length ? frames[nearest + 1].timestamp - frames[nearest].timestamp : Number.POSITIVE_INFINITY
+  const localGap = Math.min(previousGap, nextGap)
+  const tolerance = Number.isFinite(localGap) ? Math.max(0.000001, localGap / 4) : 0.001
+  const isOnNearestFrame = Math.abs(frames[nearest].timestamp - timestamp) <= tolerance
+
+  let target = nearest
+  if (isOnNearestFrame) {
+    target += direction
+  } else if (direction > 0 && frames[nearest].timestamp < timestamp) {
+    target += 1
+  } else if (direction < 0 && frames[nearest].timestamp > timestamp) {
+    target -= 1
+  }
+
+  return Math.max(0, Math.min(frames.length - 1, target))
 }
 
 export default App

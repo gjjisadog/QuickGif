@@ -2600,6 +2600,7 @@ dependencies = [
  "tauri-plugin-opener",
  "thiserror 2.0.18",
  "time",
+ "uuid",
  "windows-sys 0.61.2",
 ]
 

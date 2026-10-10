@@ -35,13 +35,16 @@ android/README.md
 - 使用 ffprobe 读取时长、分辨率、帧率、编码、总帧数
 - 自动生成最多 80 张缩略图时间轴
 - 视频预览播放
-- 基于 ffprobe 帧时间戳的精确定位；播放器控制支持后退 / 前进 5 秒
+- 基于 ffprobe 帧时间戳的精确定位；播放器控制支持上一帧 / 下一帧
 - 当前帧号和当前时间显示
 - 点击缩略图或时间轴定位视频
 - 设置开始帧 / 结束帧
 - 手动输入开始时间 / 结束时间
 - 导出 MP4、WebP、GIF
+- 导出苹果实况照片（Live Photo：配对 JPG + MOV + Content Identifier）
+- 导入实况照片静态图时自动解析同名 `.MOV` / `.MP4` 配对视频
 - 右键导出当前帧 PNG
+- 将开始帧到结束帧逐帧导出为连续编号的 PNG 图片
 - 菜单栏选择导出格式，默认 MP4
 - 基于 FFmpeg `-progress pipe:1` 的导出进度条
 - 文件不存在、格式不支持、FFmpeg 调用失败、导出失败等错误提示
@@ -57,6 +60,8 @@ android/README.md
 - `mp4_exporter`：导出高质量 H.264 MP4
 - `webp_exporter`：导出循环动画 WebP
 - `gif_exporter`：两步法导出 GIF
+- `live_photo_exporter`：导出苹果实况照片（JPG + MOV 配对）
+- `apple_live_photo_meta`：向 JPEG 写入 Content Identifier
 - `image_exporter`：导出当前帧 PNG
 - `temp_manager`：管理缩略图、调色板等临时文件
 - `error_handler`：统一错误信息
@@ -141,8 +146,11 @@ npm run tauri:build
 - MP4：默认格式，H.264，适合体积较小的动图替代物
 - WebP：动画 WebP，默认 15fps、720 边界内、无限循环
 - GIF：默认 720 宽、15fps、标准质量
+- 实况照片 / Live Photo：导出同主文件名的 `.JPG` + `.MOV` 配对，写入共享 Content Identifier；选区时长需在 **0.5–6 秒**。关键静帧默认取播放头（在选区内时）或选区中点。将两个文件一并导入 macOS/iOS「照片」即可识别为实况照片。
 
-在细节缩略图或视频区右键可导出当前帧 PNG。
+导入时若选择实况照片的静态图（`jpg` / `jpeg` / `heic` / `heif` / `png`），应用会自动查找同目录下同名的 `.MOV` / `.MP4` 作为编辑源。
+
+在细节缩略图或视频区右键可导出当前帧 PNG；也可使用“逐帧导出选区”，将选区内原始帧输出到独立文件夹。
 
 ## GIF 导出策略
 

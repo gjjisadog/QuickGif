@@ -13,6 +13,9 @@ use crate::{
 };
 
 const SUPPORTED_EXTENSIONS: &[&str] = &["mp4", "mov", "avi", "mkv", "webm"];
+/// Still side of an Apple Live Photo pair — we resolve the sibling motion video.
+const LIVE_PHOTO_STILL_EXTENSIONS: &[&str] = &["jpg", "jpeg", "heic", "heif", "png"];
+const LIVE_PHOTO_VIDEO_CANDIDATES: &[&str] = &["MOV", "mov", "MP4", "mp4"];
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,7 +54,7 @@ struct FfprobeStream {
 }
 
 pub fn probe_video(app: &AppHandle, path: String) -> QuickGifResult<VideoInfo> {
-    let path = PathBuf::from(path);
+    let path = resolve_import_media_path(PathBuf::from(path))?;
     validate_video_path(&path)?;
 
     let ffprobe = ffmpeg_locator::resolve_tool(app, "ffprobe")?;
@@ -75,6 +78,44 @@ pub fn probe_video(app: &AppHandle, path: String) -> QuickGifResult<VideoInfo> {
     }
 
     parse_probe_json(&path, &output.stdout)
+}
+
+/// Resolve Apple Live Photo stills to their paired motion video when present.
+pub fn resolve_import_media_path(path: PathBuf) -> QuickGifResult<PathBuf> {
+    if !path.is_file() {
+        return Err(QuickGifError::FileNotFound(path));
+    }
+
+    let extension = path
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or_default()
+        .to_lowercase();
+
+    if SUPPORTED_EXTENSIONS.contains(&extension.as_str()) {
+        return Ok(path);
+    }
+
+    if !LIVE_PHOTO_STILL_EXTENSIONS.contains(&extension.as_str()) {
+        return Err(QuickGifError::UnsupportedFormat(extension));
+    }
+
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = path
+        .file_stem()
+        .and_then(OsStr::to_str)
+        .ok_or_else(|| QuickGifError::UnsupportedFormat(extension.clone()))?;
+
+    for candidate_ext in LIVE_PHOTO_VIDEO_CANDIDATES {
+        let candidate = parent.join(format!("{stem}.{candidate_ext}"));
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+
+    Err(QuickGifError::Io(format!(
+        "已识别为可能的实况照片静态图，但未找到同名配对视频（{stem}.MOV / .MP4）。请选择配对的 .MOV，或同时保留 JPG/HEIC 与 MOV。"
+    )))
 }
 
 pub fn validate_video_path(path: &Path) -> QuickGifResult<()> {
@@ -173,6 +214,12 @@ mod tests {
         let path = PathBuf::from("clip.txt");
         let result = validate_extension_only(&path);
         assert!(matches!(result, Err(QuickGifError::UnsupportedFormat(_))));
+    }
+
+    #[test]
+    fn live_photo_still_extensions_are_recognized() {
+        assert!(LIVE_PHOTO_STILL_EXTENSIONS.contains(&"heic"));
+        assert!(LIVE_PHOTO_STILL_EXTENSIONS.contains(&"jpg"));
     }
 
     fn validate_extension_only(path: &Path) -> QuickGifResult<()> {

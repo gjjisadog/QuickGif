@@ -47,7 +47,10 @@ pub fn build_frame_index(app: &AppHandle, input_path: &Path) -> QuickGifResult<V
 pub fn parse_frame_timestamps(stdout: &str) -> Vec<FramePoint> {
     stdout
         .lines()
-        .filter_map(|line| line.trim().parse::<f64>().ok())
+        // Some codecs append side-data text to the CSV row (for example an
+        // unregistered SEI message).  The timestamp is still the first field;
+        // parsing the whole row silently dropped those otherwise valid frames.
+        .filter_map(|line| line.split(',').next()?.trim().parse::<f64>().ok())
         .enumerate()
         .map(|(index, timestamp)| FramePoint {
             frame: index as u64,
@@ -75,6 +78,16 @@ mod tests {
         assert_eq!(frames.len(), 2);
         assert_eq!(frames[1].frame, 1);
         assert!((frames[1].timestamp - 0.041667).abs() < 0.0001);
+    }
+
+    #[test]
+    fn keeps_frames_with_ffprobe_side_data_in_csv_row() {
+        let frames =
+            parse_frame_timestamps("0.000000,H.264 User Data Unregistered SEI message\n0.041667\n");
+
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].frame, 0);
+        assert_eq!(frames[0].timestamp, 0.0);
     }
 
     #[test]

@@ -1,8 +1,10 @@
+mod apple_live_photo_meta;
 mod error_handler;
 mod ffmpeg_locator;
 mod frame_indexer;
 mod gif_exporter;
 mod image_exporter;
+mod live_photo_exporter;
 mod mp4_exporter;
 mod settings;
 mod temp_manager;
@@ -12,7 +14,11 @@ mod webp_exporter;
 
 use frame_indexer::{build_frame_index, FramePoint};
 use gif_exporter::{export_gif, ExportGifRequest, ExportGifResult};
-use image_exporter::{export_frame_image, ExportFrameImageRequest, ExportFrameImageResult};
+use image_exporter::{
+    export_frame_image, export_frame_sequence, ExportFrameImageRequest, ExportFrameImageResult,
+    ExportFrameSequenceRequest, ExportFrameSequenceResult,
+};
+use live_photo_exporter::{export_live_photo, ExportLivePhotoRequest, ExportLivePhotoResult};
 use mp4_exporter::{export_mp4, ExportMp4Request, ExportMp4Result};
 use settings::{
     load_settings, set_default_export_dir, set_language, set_shortcuts, AppSettings,
@@ -34,6 +40,7 @@ const MENU_USE_SOURCE_DIR: &str = "quickgif-use-source-dir";
 const MENU_EXPORT_FORMAT_MP4: &str = "quickgif-export-format-mp4";
 const MENU_EXPORT_FORMAT_WEBP: &str = "quickgif-export-format-webp";
 const MENU_EXPORT_FORMAT_GIF: &str = "quickgif-export-format-gif";
+const MENU_EXPORT_FORMAT_LIVE_PHOTO: &str = "quickgif-export-format-live-photo";
 const MENU_KEYBOARD_SHORTCUTS: &str = "quickgif-keyboard-shortcuts";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -51,6 +58,7 @@ pub fn run() {
                     | MENU_EXPORT_FORMAT_MP4
                     | MENU_EXPORT_FORMAT_WEBP
                     | MENU_EXPORT_FORMAT_GIF
+                    | MENU_EXPORT_FORMAT_LIVE_PHOTO
                     | MENU_KEYBOARD_SHORTCUTS
             ) {
                 let _ = app.emit("quickgif-menu", id);
@@ -70,7 +78,9 @@ pub fn run() {
             export_gif_command,
             export_mp4_command,
             export_webp_command,
+            export_live_photo_command,
             export_frame_image_command,
+            export_frame_sequence_command,
             get_settings_command,
             set_language_command,
             set_default_export_dir_command,
@@ -123,6 +133,13 @@ fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         MenuItem::with_id(app, MENU_EXPORT_FORMAT_WEBP, "WebP", true, None::<&str>)?;
     let export_format_gif =
         MenuItem::with_id(app, MENU_EXPORT_FORMAT_GIF, "GIF", true, None::<&str>)?;
+    let export_format_live_photo = MenuItem::with_id(
+        app,
+        MENU_EXPORT_FORMAT_LIVE_PHOTO,
+        labels.export_format_live_photo,
+        true,
+        None::<&str>,
+    )?;
     let keyboard_shortcuts = MenuItem::with_id(
         app,
         MENU_KEYBOARD_SHORTCUTS,
@@ -140,7 +157,12 @@ fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         app,
         labels.export_format_menu,
         true,
-        &[&export_format_mp4, &export_format_webp, &export_format_gif],
+        &[
+            &export_format_mp4,
+            &export_format_webp,
+            &export_format_gif,
+            &export_format_live_photo,
+        ],
     )?;
     let export_separator = PredefinedMenuItem::separator(app)?;
     let export_menu = Submenu::with_items(
@@ -167,6 +189,7 @@ struct MenuLabels {
     export_menu: &'static str,
     export_format_menu: &'static str,
     export_format_mp4: &'static str,
+    export_format_live_photo: &'static str,
     set_export_dir: &'static str,
     use_source_dir: &'static str,
     settings_menu: &'static str,
@@ -183,6 +206,7 @@ impl MenuLabels {
                 export_menu: "Export",
                 export_format_menu: "Export Format",
                 export_format_mp4: "MP4 (Default)",
+                export_format_live_photo: "Live Photo (JPG + MOV)",
                 set_export_dir: "Set Default Export Folder...",
                 use_source_dir: "Use Source Video Folder",
                 settings_menu: "Settings",
@@ -197,6 +221,7 @@ impl MenuLabels {
             export_menu: "导出",
             export_format_menu: "导出格式",
             export_format_mp4: "MP4（默认）",
+            export_format_live_photo: "实况照片（JPG + MOV）",
             set_export_dir: "设置默认导出文件夹...",
             use_source_dir: "使用原视频目录",
             settings_menu: "设置",
@@ -289,11 +314,33 @@ async fn export_webp_command(
 }
 
 #[tauri::command]
+async fn export_live_photo_command(
+    app: tauri::AppHandle,
+    request: ExportLivePhotoRequest,
+) -> Result<ExportLivePhotoResult, String> {
+    tauri::async_runtime::spawn_blocking(move || export_live_photo(&app, request))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn export_frame_image_command(
     app: tauri::AppHandle,
     request: ExportFrameImageRequest,
 ) -> Result<ExportFrameImageResult, String> {
     tauri::async_runtime::spawn_blocking(move || export_frame_image(&app, request))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn export_frame_sequence_command(
+    app: tauri::AppHandle,
+    request: ExportFrameSequenceRequest,
+) -> Result<ExportFrameSequenceResult, String> {
+    tauri::async_runtime::spawn_blocking(move || export_frame_sequence(&app, request))
         .await
         .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())

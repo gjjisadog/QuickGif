@@ -645,7 +645,7 @@ select:disabled {
 .thumbnail-button img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
   opacity: 0.92;
   filter: saturate(0.96) contrast(1.04);
@@ -953,6 +953,27 @@ select:focus {
   color: var(--text-soft);
   font-size: 12px;
   font-weight: 760;
+}
+
+.result-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 190px;
+}
+
+.result-paths span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-hint {
+  color: var(--text-soft);
+  opacity: 0.85;
+  font-weight: 640;
+  white-space: normal !important;
 }
 
 .progress-panel {
